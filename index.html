@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="id">
 <head>
@@ -373,68 +374,146 @@ placeholder="Cari event...">
     </div>
 
     <script>
-        // ================== SUPABASE CONFIG ==================
-const SUPABASE_URL = 'https://pykewmzwdhbjctlfgmnm.supabase.co';
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB5a2V3bXp3ZGhiamN0bGZnbW5tIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEzMTU3MzAsImV4cCI6MjA5Njg5MTczMH0.-aArphcJFVSWxaDq5Z9l2Eq8_n0Md5U4jRZ0r2Vrhnw';
+		// ================= SUPABASE INIT =================
+const SUPABASE_URL = "https://pykewmzwdhbjctlfgmnm.supabase.co";
+const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB5a2V3bXp3ZGhiamN0bGZnbW5tIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEzMTU3MzAsImV4cCI6MjA5Njg5MTczMH0.-aArphcJFVSWxaDq5Z9l2Eq8_n0Md5U4jRZ0r2Vrhnw";
 
-const supabase = Supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+		
+        let jobs = [];
+        let notes = [];
+        let events = [];
+        let currentUser = localStorage.getItem('username') || "User";
+        let pinCode = localStorage.getItem('appPin');
+        let currentFilter = 'all';
+        let editingJobIndex = -1;
+        let editingNoteIndex = -1;
+        let editingEventIndex = -1;
+        let currentMonth = new Date().getMonth();
+        let currentYear = new Date().getFullYear();
+        let jobChartInstance = null;
 
-// ================== FUNGSI HELPER ==================
-async function loadAllData() {
-    const [jobsRes, notesRes, eventsRes] = await Promise.all([
-        supabase.from('jobs').select('*').order('due_date', { ascending: true }),
-        supabase.from('notes').select('*').order('created_at', { ascending: false }),
-        supabase.from('events').select('*').order('date', { ascending: true })
-    ]);
+        async function saveData() {
+    // JOBS
+    await sb.from('jobs').upsert(jobs);
 
-    jobs = jobsRes.data || [];
-    notes = notesRes.data || [];
-    events = eventsRes.data || [];
+    // NOTES
+    await sb.from('notes').upsert(notes);
+
+    // EVENTS
+    await sb.from('events').upsert(events);
 }
-
-// Simpan data
-async function saveData() {
-    // Tidak perlu manual save karena kita pakai Supabase langsung
-}
-
         // PIN
-function showPinScreen() {
-    document.getElementById('mainApp').classList.add('hidden');
-    document.getElementById('pinScreen').style.display = 'flex';
+        function showPinScreen() {
+            document.getElementById('mainApp').classList.add('hidden');
+            document.getElementById('pinScreen').style.display = 'flex';
+        }
+        function hidePinScreen() {
+            document.getElementById('pinScreen').style.display = 'none';
+            document.getElementById('mainApp').classList.remove('hidden');
+        }
+        function appendPin(digit) {
+            const input = document.getElementById('pinInput');
+            if (input.value.length < 6) input.value += digit;
+        }
+        function clearPin() { document.getElementById('pinInput').value = ''; }
+        function verifyPin() {
+            const entered = document.getElementById('pinInput').value;
+            if (!pinCode) {
+                if (entered.length >= 4) {
+                    pinCode = entered;
+                    localStorage.setItem('appPin', pinCode);
+                    alert("✅ PIN berhasil diatur!");
+                    hidePinScreen();
+                    initApp();
+                }
+            } else if (entered === pinCode) {
+                hidePinScreen();
+                initApp();
+            } else {
+                alert("❌ PIN salah!"); clearPin();
+            }
+        }
+        function setupNewPin() {
+            const newPin = prompt("Masukkan PIN baru (minimal 4 digit):");
+            if (newPin && newPin.length >= 4) {
+                pinCode = newPin;
+                localStorage.setItem('appPin', pinCode);
+                alert("PIN baru disimpan!");
+            }
+        }
+		function changePin() {
+  const usernameInput = prompt("Masukkan Nama User Anda untuk verifikasi:");
+  
+  if (!usernameInput) return;
+
+  // Cek apakah nama user cocok (case insensitive)
+  if (usernameInput.toLowerCase() !== currentUser.toLowerCase()) {
+    alert("❌ Nama User salah!");
+    return;
+  }
+
+  const newPin = prompt("Masukkan PIN Baru (minimal 4 digit):");
+  
+  if (newPin && newPin.length >= 4) {
+    pinCode = newPin;
+    localStorage.setItem('appPin', pinCode);
+    alert("✅ PIN baru berhasil diubah!");
+  } else if (newPin) {
+    alert("❌ PIN minimal 4 digit!");
+  }
 }
 
-function hidePinScreen() {
-    document.getElementById('pinScreen').style.display = 'none';
-    document.getElementById('mainApp').classList.remove('hidden');
+        function isTodayCompleted(job) {
+            if (!job.completedDates) return false;
+            const today = new Date().toISOString().split('T')[0];
+            return job.completedDates.includes(today);
+        }
+
+        function updateClock() {
+            const now = new Date();
+            document.getElementById('liveClock').textContent = now.toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit', second:'2-digit'});
+            document.getElementById('liveDate').textContent = now.toLocaleDateString('id-ID', {weekday:'long', day:'numeric', month:'long', year:'numeric'});
+            const hour = now.getHours();
+            let greeting = hour < 12 ? "Selamat pagi" : hour < 15 ? "Selamat siang" : hour < 18 ? "Selamat sore" : "Selamat malam";
+            document.getElementById('greeting').textContent = greeting + ", " + currentUser + "!";
+        }
+
+        function toggleTheme() {
+  const html = document.documentElement;
+  const isLight = html.classList.toggle('light');   // Ubah dari 'dark' ke 'light'
+  
+  const themeText = document.getElementById('themeText');
+  const themeIcon = document.getElementById('themeIcon');
+
+  if (isLight) {
+    themeText.textContent = 'Dark Mode';
+    themeIcon.classList.remove('fa-moon');
+    themeIcon.classList.add('fa-sun');
+  } else {
+    themeText.textContent = 'Light Mode';
+    themeIcon.classList.remove('fa-sun');
+    themeIcon.classList.add('fa-moon');
+  }
+
+  localStorage.setItem('theme', isLight ? 'light' : 'dark');
 }
 
-function appendPin(digit) {
-    const input = document.getElementById('pinInput');
-    if (input.value.length < 6) input.value += digit;
-}
+        function showTab(n) {
+            document.querySelectorAll('.tab-pane').forEach(el => el.classList.add('hidden'));
+            document.getElementById(`tab${n}`).classList.remove('hidden');
+            document.querySelectorAll('.tab-link').forEach(link => link.classList.remove('active'));
+            document.querySelectorAll('.tab-link')[n].classList.add('active');
+            if (n === 0) updateDashboard();
+            if (n === 1) renderJobs();
+            if (n === 2) renderNotes();
+            if (n === 3) { renderCalendar(); renderEventList(); }
+        }
 
-function clearPin() {
-    document.getElementById('pinInput').value = '';
-}
+        function logout() {
+            if (confirm("Logout dan kembali ke layar PIN?")) showPinScreen();
+        }
 
-function verifyPin() {
-    const entered = document.getElementById('pinInput').value;
-
-    if (!pinCode) {
-        pinCode = entered;
-        localStorage.setItem('appPin', pinCode);
-        hidePinScreen();
-        initApp();
-    } 
-    else if (entered === pinCode) {
-        hidePinScreen();
-        initApp();
-    } 
-    else {
-        alert("PIN salah");
-        clearPin();
-    }
-}
         // DASHBOARD
 function updateDashboard() {
     document.getElementById('totalJob').textContent = jobs.length;
@@ -673,13 +752,15 @@ function renderJobsWith(list) {
                 recurrence: document.getElementById('jobRecurrenceInput').value,
                 completedDates: editingJobIndex >= 0 ? jobs[editingJobIndex].completedDates || [] : []
             };
-            if (editingJobIndex >= 0) jobs[editingJobIndex] = {...jobs[editingJobIndex], ...jobData};
-            else jobs.push(jobData);
-            saveData();
-            hideJobModal();
-            renderJobs();
-            updateDashboard();
-        }
+           if (editingJobIndex >= 0) {
+    jobs[editingJobIndex] = { ...jobs[editingJobIndex], ...jobData };
+} else {
+    jobs.push(jobData);
+}
+
+await saveData();
+renderJobs();
+updateDashboard();
 
         function editJob(idx) {
             editingJobIndex = idx;
@@ -691,7 +772,7 @@ function renderJobsWith(list) {
             document.getElementById('jobModal').classList.remove('hidden');
         }
 
-        function deleteJob(idx) {
+        async deleteJob(idx) {
             if (confirm("Hapus job ini?")) {
                 jobs.splice(idx, 1);
                 saveData();
@@ -738,21 +819,24 @@ function renderJobsWith(list) {
         }
         function hideNoteModal() { document.getElementById('noteModal').classList.add('hidden'); }
 
-        function saveNote() {
-            const title = document.getElementById('noteTitleInput').value.trim() || "Catatan Baru";
-            const content = document.getElementById('noteContentInput').value.trim();
-            if (!content) return alert("Isi catatan tidak boleh kosong");
-            if (editingNoteIndex >= 0) {
-                notes[editingNoteIndex].title = title;
-                notes[editingNoteIndex].content = content;
-            } else {
-                notes.push({title, content, date: new Date().toLocaleDateString('id-ID')});
-            }
-            saveData();
-            hideNoteModal();
-            renderNotes();
-            updateDashboard();
-        }
+        async function saveNote() {
+    const title = document.getElementById('noteTitleInput').value.trim() || "Catatan Baru";
+    const content = document.getElementById('noteContentInput').value.trim();
+
+    if (!content) return alert("Isi catatan tidak boleh kosong");
+
+    if (editingNoteIndex >= 0) {
+        notes[editingNoteIndex].title = title;
+        notes[editingNoteIndex].content = content;
+    } else {
+        notes.push({ title, content, date: new Date().toLocaleDateString('id-ID') });
+    }
+
+    await saveData();
+    hideNoteModal();
+    renderNotes();
+    updateDashboard();
+}
 
         function editNote(i) {
             editingNoteIndex = i;
@@ -762,14 +846,14 @@ function renderJobsWith(list) {
             document.getElementById('noteModal').classList.remove('hidden');
         }
 
-        function deleteNote(i) {
-            if (confirm("Hapus catatan?")) {
-                notes.splice(i, 1);
-                saveData();
-                renderNotes();
-                updateDashboard();
-            }
-        }
+        async function deleteNote(i) {
+    if (confirm("Hapus catatan?")) {
+        notes.splice(i, 1);
+        await saveData();
+        renderNotes();
+        updateDashboard();
+    }
+}
 
         // CALENDAR
         function renderCalendar() {
@@ -800,17 +884,27 @@ function renderJobsWith(list) {
             document.getElementById('eventModal').classList.remove('hidden');
         }
 
-        function saveEvent() {
-            const title = document.getElementById('eventTitleInput').value.trim();
-            if (!title) return alert("Judul event wajib!");
-            const ev = { date: document.getElementById('eventDateInput').value, title, desc: document.getElementById('eventDescInput').value };
-            if (editingEventIndex >= 0) events[editingEventIndex] = ev;
-            else events.push(ev);
-            saveData();
-            hideEventModal();
-            renderCalendar();
-            renderEventList();
-        }
+        async function saveEvent() {
+    const title = document.getElementById('eventTitleInput').value.trim();
+    if (!title) return alert("Judul event wajib!");
+
+    const ev = {
+        date: document.getElementById('eventDateInput').value,
+        title,
+        desc: document.getElementById('eventDescInput').value
+    };
+
+    if (editingEventIndex >= 0) {
+        events[editingEventIndex] = ev;
+    } else {
+        events.push(ev);
+    }
+
+    await saveData();
+    hideEventModal();
+    renderCalendar();
+    renderEventList();
+}
 
         function renderEventList() {
             const container = document.getElementById('eventList');
@@ -846,7 +940,7 @@ function renderJobsWith(list) {
         }
         function hideEventModal() { document.getElementById('eventModal').classList.add('hidden'); }
 
-function initApp() {
+async function initApp() {
 // Load tema yang tersimpan
   const savedTheme = localStorage.getItem('theme');
   if (savedTheme === 'light') {
@@ -855,7 +949,8 @@ function initApp() {
     document.getElementById('themeIcon').classList.add('fa-sun');
     document.getElementById('themeIcon').classList.remove('fa-moon');
   }
-  
+
+    await loadData();
     document.getElementById('currentUser').textContent = `Halo, ${currentUser}`;
 
     showTab(0);
