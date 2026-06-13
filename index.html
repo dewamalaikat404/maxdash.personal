@@ -372,205 +372,491 @@ placeholder="Cari event...">
         </div>
     </div>
 
-<script>
-// ================== SUPABASE CONFIG ==================
+    <script>
+        // ================== SUPABASE CONFIG ==================
 const SUPABASE_URL = 'https://pykewmzwdhbjctlfgmnm.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB5a2V3bXp3ZGhiamN0bGZnbW5tIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEzMTU3MzAsImV4cCI6MjA5Njg5MTczMH0.-aArphcJFVSWxaDq5Z9l2Eq8_n0Md5U4jRZ0r2Vrhnw';
 
 const supabase = Supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-// ================== VARIABEL GLOBAL ==================
-let jobs = [];
-let notes = [];
-let events = [];
-let currentUser = localStorage.getItem('username') || "User";
-let pinCode = localStorage.getItem('appPin');
-let currentFilter = 'all';
-let editingJobIndex = -1;
-let editingNoteIndex = -1;
-let editingEventIndex = -1;
-let currentMonth = new Date().getMonth();
-let currentYear = new Date().getFullYear();
-let jobChartInstance = null;
-
-// ================== LOAD DATA DARI DATABASE ==================
+// ================== FUNGSI HELPER ==================
 async function loadAllData() {
-    try {
-        const [jobsRes, notesRes, eventsRes] = await Promise.all([
-            supabase.from('jobs').select('*').order('due_date', { ascending: true }),
-            supabase.from('notes').select('*').order('created_at', { ascending: false }),
-            supabase.from('events').select('*').order('date', { ascending: true })
-        ]);
+    const [jobsRes, notesRes, eventsRes] = await Promise.all([
+        supabase.from('jobs').select('*').order('due_date', { ascending: true }),
+        supabase.from('notes').select('*').order('created_at', { ascending: false }),
+        supabase.from('events').select('*').order('date', { ascending: true })
+    ]);
 
-        jobs = jobsRes.data || [];
-        notes = notesRes.data || [];
-        events = eventsRes.data || [];
-    } catch (e) {
-        console.error("Gagal load data:", e);
-        alert("❌ Gagal menghubungkan ke database. Cek koneksi internet!");
-    }
+    jobs = jobsRes.data || [];
+    notes = notesRes.data || [];
+    events = eventsRes.data || [];
 }
 
-// ================== HELPER ==================
-function isTodayCompleted(job) {
-    if (!job.completed_dates) return false;
+// Simpan data
+async function saveData() {
+    // Tidak perlu manual save karena kita pakai Supabase langsung
+}
+
+        // PIN
+function showPinScreen() {
+    document.getElementById('mainApp').classList.add('hidden');
+    document.getElementById('pinScreen').style.display = 'flex';
+}
+
+function hidePinScreen() {
+    document.getElementById('pinScreen').style.display = 'none';
+    document.getElementById('mainApp').classList.remove('hidden');
+}
+
+function appendPin(digit) {
+    const input = document.getElementById('pinInput');
+    if (input.value.length < 6) input.value += digit;
+}
+
+function clearPin() {
+    document.getElementById('pinInput').value = '';
+}
+
+function verifyPin() {
+    const entered = document.getElementById('pinInput').value;
+
+    if (!pinCode) {
+        pinCode = entered;
+        localStorage.setItem('appPin', pinCode);
+        hidePinScreen();
+        initApp();
+    } 
+    else if (entered === pinCode) {
+        hidePinScreen();
+        initApp();
+    } 
+    else {
+        alert("PIN salah");
+        clearPin();
+    }
+}
+        // DASHBOARD
+function updateDashboard() {
+    document.getElementById('totalJob').textContent = jobs.length;
+    document.getElementById('pendingJob').textContent =
+        jobs.filter(j => !isTodayCompleted(j)).length;
+
+    document.getElementById('doneToday').textContent =
+        jobs.filter(j => isTodayCompleted(j)).length;
+
+    document.getElementById('totalNotes').textContent = notes.length;
+
+    renderJobChart();
+    renderDoneList();
+
+    renderReminderList();
+    renderUpcomingList();
+}
+function renderReminderList() {
+    const container = document.getElementById('reminderList');
+
     const today = new Date().toISOString().split('T')[0];
-    const completed = JSON.parse(job.completed_dates || '[]');
-    return completed.includes(today);
+
+    const todayJobs = jobs.filter(job =>
+        job.dueDate === today &&
+        !isTodayCompleted(job)
+    );
+
+    if(todayJobs.length === 0){
+        container.innerHTML =
+            '<p class="text-slate-400">Tidak ada reminder hari ini</p>';
+        return;
+    }
+
+    container.innerHTML = '';
+
+    todayJobs.forEach(job=>{
+        container.innerHTML += `
+            <div class="p-3 bg-blue-500/10 rounded-xl">
+                <div>${job.title}</div>
+                <div class="text-sm text-slate-400">
+                    ${job.dueTime || '-'}
+                </div>
+            </div>
+        `;
+    });
 }
-
-// ================== JOBS ==================
-async function addOrUpdateJob() {
-    const title = document.getElementById('jobTitleInput').value.trim();
-    if (!title) return alert("Nama job wajib diisi!");
-
-    const jobData = {
-        title,
-        due_date: document.getElementById('jobDateInput').value || null,
-        due_time: document.getElementById('jobTimeInput').value || null,
-        recurrence: document.getElementById('jobRecurrenceInput').value,
-        completed_dates: editingJobIndex >= 0 ? jobs[editingJobIndex].completed_dates : '[]'
-    };
-
-    try {
-        if (editingJobIndex >= 0) {
-            await supabase.from('jobs').update(jobData).eq('id', jobs[editingJobIndex].id);
-        } else {
-            await supabase.from('jobs').insert(jobData);
+        function renderJobChart() {
+            const ctx = document.getElementById('jobChart');
+            if (jobChartInstance) jobChartInstance.destroy();
+            const done = jobs.filter(j => isTodayCompleted(j)).length;
+            const pending = jobs.length - done;
+            jobChartInstance = new Chart(ctx, {
+                type: 'doughnut',
+                data: { labels: ['Done', 'Pending'], datasets: [{ data: [done, pending], backgroundColor: ['#10b981', '#f59e0b'], borderWidth: 0 }] },
+                options: { responsive: true, plugins: { legend: { position: 'bottom', labels: { color: '#e2e8f0' } } } }
+            });
         }
-        hideJobModal();
-        await loadAllData();
-        renderJobs();
-        updateDashboard();
-    } catch (e) {
-        alert("Gagal menyimpan job: " + e.message);
-    }
-}
 
-async function markJobDone(idx) {
-    const job = jobs[idx];
-    if (!job) return;
-
-    let completed = JSON.parse(job.completed_dates || '[]');
-    const today = new Date().toISOString().split('T')[0];
-    if (!completed.includes(today)) completed.push(today);
-
-    try {
-        await supabase.from('jobs').update({ completed_dates: JSON.stringify(completed) }).eq('id', job.id);
-        await loadAllData();
-        renderJobs();
-        updateDashboard();
-    } catch (e) {
-        alert("Gagal update status job");
-    }
-}
-
-async function deleteJob(idx) {
-    if (!confirm("Hapus job ini?")) return;
-    try {
-        await supabase.from('jobs').delete().eq('id', jobs[idx].id);
-        await loadAllData();
-        renderJobs();
-        updateDashboard();
-    } catch (e) {
-        alert("Gagal menghapus job");
-    }
-}
-
-async function editJob(idx) {
-    editingJobIndex = idx;
-    const job = jobs[idx];
-    document.getElementById('jobTitleInput').value = job.title;
-    document.getElementById('jobDateInput').value = job.due_date || '';
-    document.getElementById('jobTimeInput').value = job.due_time || '';
-    document.getElementById('jobRecurrenceInput').value = job.recurrence || 'none';
-    document.getElementById('jobModal').classList.remove('hidden');
-}
-
-// ================== NOTES ==================
-async function saveNote() {
-    const title = document.getElementById('noteTitleInput').value.trim() || "Catatan Baru";
-    const content = document.getElementById('noteContentInput').value.trim();
-    if (!content) return alert("Isi catatan tidak boleh kosong");
-
-    try {
-        if (editingNoteIndex >= 0) {
-            await supabase.from('notes').update({ title, content }).eq('id', notes[editingNoteIndex].id);
-        } else {
-            await supabase.from('notes').insert({ title, content, date: new Date().toLocaleDateString('id-ID') });
+        function renderDoneList() {
+            const container = document.getElementById('doneList');
+            const doneJobs = jobs.filter(j => isTodayCompleted(j));
+            container.innerHTML = doneJobs.length ? '' : '<p class="text-slate-400">Belum ada job yang selesai hari ini</p>';
+            doneJobs.forEach(job => {
+                container.innerHTML += `<div class="flex items-center gap-3 p-3 bg-emerald-500/10 rounded-2xl"><i class="fa fa-check-circle text-emerald-400"></i><div><p class="font-medium">${job.title}</p></div></div>`;
+            });
         }
-        hideNoteModal();
-        await loadAllData();
-        renderNotes();
-        updateDashboard();
-    } catch (e) {
-        alert("Gagal menyimpan catatan");
+		
+function renderUpcomingList() {
+  const container = document.getElementById('upcomingList');
+  const now = new Date();
+
+  const upcoming = jobs
+    .filter(job => {
+      if (!job.dueDate) return false;
+      
+      const jobDateTime = new Date(job.dueDate + (job.dueTime ? 'T' + job.dueTime : 'T23:59'));
+      return jobDateTime > now; // hanya yang belum lewat
+    })
+    .sort((a, b) => {
+      const dateA = new Date(a.dueDate + (a.dueTime ? 'T' + a.dueTime : 'T23:59'));
+      const dateB = new Date(b.dueDate + (b.dueTime ? 'T' + b.dueTime : 'T23:59'));
+      return dateA - dateB; // urutkan dari yang paling dekat
+    })
+    .slice(0, 6); // maksimal 6 item
+
+  if (upcoming.length === 0) {
+    container.innerHTML = '<p class="text-slate-400">Tidak ada jadwal mendatang</p>';
+    return;
+  }
+
+  container.innerHTML = '';
+
+  upcoming.forEach(job => {
+    const jobDateTime = new Date(job.dueDate + (job.dueTime ? 'T' + job.dueTime : 'T23:59'));
+    const diffMs = jobDateTime - now;
+    const diffHours = diffMs / (1000 * 60 * 60);
+
+    let label = '';
+    let urgencyClass = '';
+
+    if (diffHours <= 1) {
+      label = '🔥 Segera (kurang dari 1 jam)';
+      urgencyClass = 'bg-red-500/20 border-red-400/30';
+    } else if (diffHours <= 3) {
+      label = '⏰ Hampir dekat';
+      urgencyClass = 'bg-amber-500/20 border-amber-400/30';
     }
+
+    container.innerHTML += `
+      <div class="p-4 rounded-2xl border ${urgencyClass || 'bg-purple-500/10 border-purple-400/20'}">
+        <div class="font-medium">${job.title}</div>
+        <div class="text-sm text-slate-400 mt-1">
+          ${job.dueDate} ${job.dueTime ? '• ' + job.dueTime : ''}
+        </div>
+        ${label ? `<div class="text-xs mt-2 inline-block px-3 py-1 rounded-full ${diffHours <= 1 ? 'bg-red-500/30 text-red-300' : 'bg-amber-500/30 text-amber-300'}">${label}</div>` : ''}
+      </div>
+    `;
+  });
 }
 
-async function deleteNote(i) {
-    if (!confirm("Hapus catatan?")) return;
-    try {
-        await supabase.from('notes').delete().eq('id', notes[i].id);
-        await loadAllData();
-        renderNotes();
-        updateDashboard();
-    } catch (e) {
-        alert("Gagal hapus catatan");
-    }
-}
-
-// ================== EVENTS ==================
-async function saveEvent() {
-    const title = document.getElementById('eventTitleInput').value.trim();
-    if (!title) return alert("Judul event wajib!");
-
-    try {
-        const ev = {
-            date: document.getElementById('eventDateInput').value,
-            title,
-            description: document.getElementById('eventDescInput').value
-        };
-
-        if (editingEventIndex >= 0) {
-            await supabase.from('events').update(ev).eq('id', events[editingEventIndex].id);
-        } else {
-            await supabase.from('events').insert(ev);
+        // JOB MANAGER
+        function renderJobs() {
+            const container = document.getElementById('jobList');
+            container.innerHTML = '';
+            let filtered = currentFilter === 'all' ? jobs : jobs.filter(j => j.recurrence === currentFilter);
+            if (filtered.length === 0) {
+                container.innerHTML = '<p class="text-center py-12 text-slate-400">Belum ada job</p>';
+                return;
+            }
+            filtered.forEach((job, i) => {
+                const idx = jobs.indexOf(job);
+                const completed = isTodayCompleted(job);
+                container.innerHTML += `
+                    <div class="glass card p-5 rounded-2xl flex justify-between items-center">
+                        <div>
+                            <p class="font-semibold">${job.title}</p>
+                            <p class="text-sm text-slate-400">${job.dueDate || ''} ${job.dueTime || ''}</p>
+                        </div>
+                        <div class="flex gap-3">
+                            <button onclick="markJobDone(${idx})" class="px-6 py-2 bg-emerald-600 rounded-2xl text-sm ${completed ? 'opacity-50' : ''}">${completed ? '✓ Selesai' : 'Done'}</button>
+                            <button onclick="editJob(${idx})" class="px-4 py-2 bg-blue-600/30 text-blue-400 rounded-2xl text-sm">Edit</button>
+                            <button onclick="deleteJob(${idx})" class="px-4 py-2 bg-red-500/20 text-red-400 rounded-2xl text-sm">Hapus</button>
+                        </div>
+                    </div>`;
+            });
         }
-        hideEventModal();
-        await loadAllData();
-        renderCalendar();
-        renderEventList();
-    } catch (e) {
-        alert("Gagal menyimpan event");
+		function renderJobsFiltered(list) {
+    const container = document.getElementById('jobList');
+    container.innerHTML = '';
+
+    if (list.length === 0) {
+        container.innerHTML = '<p class="text-center py-12 text-slate-400">Tidak ada job</p>';
+        return;
     }
+
+    list.forEach(job => {
+        const idx = jobs.indexOf(job);
+        const completed = isTodayCompleted(job);
+
+        container.innerHTML += `
+            <div class="glass card p-5 rounded-2xl flex justify-between items-center">
+                <div>
+                    <p class="font-semibold">${job.title}</p>
+                    <p class="text-sm text-slate-400">${job.dueDate || ''} ${job.dueTime || ''}</p>
+                </div>
+                <div class="flex gap-3">
+                    <button onclick="markJobDone(${idx})"
+                        class="px-6 py-2 bg-emerald-600 rounded-2xl text-sm ${completed ? 'opacity-50' : ''}">
+                        ${completed ? '✓ Selesai' : 'Done'}
+                    </button>
+                    <button onclick="editJob(${idx})" class="px-4 py-2 bg-blue-600/30 text-blue-400 rounded-2xl text-sm">Edit</button>
+                    <button onclick="deleteJob(${idx})" class="px-4 py-2 bg-red-500/20 text-red-400 rounded-2xl text-sm">Hapus</button>
+                </div>
+            </div>
+        `;
+    });
 }
 
-async function deleteEvent(i) {
-    if (!confirm("Hapus event?")) return;
-    try {
-        await supabase.from('events').delete().eq('id', events[i].id);
-        await loadAllData();
-        renderCalendar();
-        renderEventList();
-    } catch (e) {
-        alert("Gagal hapus event");
+function renderJobsWith(list) {
+    const container = document.getElementById('jobList');
+    container.innerHTML = '';
+
+    if (list.length === 0) {
+        container.innerHTML = '<p class="text-center py-12 text-slate-400">Tidak ada job</p>';
+        return;
     }
+
+    list.forEach((job) => {
+        const idx = jobs.indexOf(job);
+        const completed = isTodayCompleted(job);
+
+        container.innerHTML += `
+            <div class="glass card p-5 rounded-2xl flex justify-between items-center">
+                <div>
+                    <p class="font-semibold">${job.title}</p>
+                    <p class="text-sm text-slate-400">${job.dueDate || ''} ${job.dueTime || ''}</p>
+                </div>
+                <div class="flex gap-3">
+                    <button onclick="markJobDone(${idx})"
+                        class="px-6 py-2 bg-emerald-600 rounded-2xl text-sm ${completed ? 'opacity-50' : ''}">
+                        ${completed ? '✓ Selesai' : 'Done'}
+                    </button>
+                    <button onclick="editJob(${idx})" class="px-4 py-2 bg-blue-600/30 text-blue-400 rounded-2xl text-sm">Edit</button>
+                    <button onclick="deleteJob(${idx})" class="px-4 py-2 bg-red-500/20 text-red-400 rounded-2xl text-sm">Hapus</button>
+                </div>
+            </div>
+        `;
+    });
 }
 
-// ================== INIT APP ==================
-async function initApp() {
-    const savedTheme = localStorage.getItem('theme');
-    if (savedTheme === 'light') {
-        document.documentElement.classList.add('light');
-        document.getElementById('themeText').textContent = 'Dark Mode';
-        document.getElementById('themeIcon').classList.add('fa-sun');
-        document.getElementById('themeIcon').classList.remove('fa-moon');
-    }
+        function markJobDone(idx) {
+            if (!jobs[idx].completedDates) jobs[idx].completedDates = [];
+            const today = new Date().toISOString().split('T')[0];
+            if (!jobs[idx].completedDates.includes(today)) jobs[idx].completedDates.push(today);
+            saveData();
+            renderJobs();
+            updateDashboard();
+        }
 
+        function showAddJobModal() {
+            editingJobIndex = -1;
+            document.getElementById('jobTitleInput').value = '';
+            document.getElementById('jobDateInput').value = new Date().toISOString().split('T')[0];
+            document.getElementById('jobTimeInput').value = '';
+            document.getElementById('jobRecurrenceInput').value = 'none';
+            document.getElementById('jobModal').classList.remove('hidden');
+        }
+        function hideJobModal() { document.getElementById('jobModal').classList.add('hidden'); }
+
+        function addOrUpdateJob() {
+            const title = document.getElementById('jobTitleInput').value.trim();
+            if (!title) return alert("Nama job wajib diisi!");
+            const jobData = {
+                title, dueDate: document.getElementById('jobDateInput').value,
+                dueTime: document.getElementById('jobTimeInput').value,
+                recurrence: document.getElementById('jobRecurrenceInput').value,
+                completedDates: editingJobIndex >= 0 ? jobs[editingJobIndex].completedDates || [] : []
+            };
+            if (editingJobIndex >= 0) jobs[editingJobIndex] = {...jobs[editingJobIndex], ...jobData};
+            else jobs.push(jobData);
+            saveData();
+            hideJobModal();
+            renderJobs();
+            updateDashboard();
+        }
+
+        function editJob(idx) {
+            editingJobIndex = idx;
+            const job = jobs[idx];
+            document.getElementById('jobTitleInput').value = job.title;
+            document.getElementById('jobDateInput').value = job.dueDate || '';
+            document.getElementById('jobTimeInput').value = job.dueTime || '';
+            document.getElementById('jobRecurrenceInput').value = job.recurrence || 'none';
+            document.getElementById('jobModal').classList.remove('hidden');
+        }
+
+        function deleteJob(idx) {
+            if (confirm("Hapus job ini?")) {
+                jobs.splice(idx, 1);
+                saveData();
+                renderJobs();
+                updateDashboard();
+            }
+        }
+
+        function filterJobs(type) {
+    currentFilter = type;
+
+    document.querySelectorAll('.filter-btn')
+        .forEach(b => b.classList.remove('active', 'bg-slate-700'));
+
+    renderJobs();
+}
+
+        // NOTES
+        function renderNotes() {
+            const container = document.getElementById('notesList');
+            container.innerHTML = notes.length ? '' : '<p class="col-span-2 text-center py-12 text-slate-400">Belum ada catatan</p>';
+            notes.forEach((note, i) => {
+                container.innerHTML += `
+                    <div class="glass card p-6 rounded-3xl">
+                        <div class="flex justify-between">
+                            <h4 class="font-semibold">${note.title}</h4>
+                            <span class="text-xs text-slate-400">${note.date}</span>
+                        </div>
+                        <p class="mt-3">${note.content}</p>
+                        <div class="mt-5 flex gap-3">
+                            <button onclick="editNote(${i})" class="flex-1 py-3 border border-slate-600 rounded-2xl">Edit</button>
+                            <button onclick="deleteNote(${i})" class="flex-1 py-3 bg-red-500/20 text-red-400 rounded-2xl">Hapus</button>
+                        </div>
+                    </div>`;
+            });
+        }
+
+        function showAddNoteModal() {
+            editingNoteIndex = -1;
+            document.getElementById('noteModalTitle').textContent = "Catatan Baru";
+            document.getElementById('noteTitleInput').value = '';
+            document.getElementById('noteContentInput').value = '';
+            document.getElementById('noteModal').classList.remove('hidden');
+        }
+        function hideNoteModal() { document.getElementById('noteModal').classList.add('hidden'); }
+
+        function saveNote() {
+            const title = document.getElementById('noteTitleInput').value.trim() || "Catatan Baru";
+            const content = document.getElementById('noteContentInput').value.trim();
+            if (!content) return alert("Isi catatan tidak boleh kosong");
+            if (editingNoteIndex >= 0) {
+                notes[editingNoteIndex].title = title;
+                notes[editingNoteIndex].content = content;
+            } else {
+                notes.push({title, content, date: new Date().toLocaleDateString('id-ID')});
+            }
+            saveData();
+            hideNoteModal();
+            renderNotes();
+            updateDashboard();
+        }
+
+        function editNote(i) {
+            editingNoteIndex = i;
+            document.getElementById('noteModalTitle').textContent = "Edit Catatan";
+            document.getElementById('noteTitleInput').value = notes[i].title;
+            document.getElementById('noteContentInput').value = notes[i].content;
+            document.getElementById('noteModal').classList.remove('hidden');
+        }
+
+        function deleteNote(i) {
+            if (confirm("Hapus catatan?")) {
+                notes.splice(i, 1);
+                saveData();
+                renderNotes();
+                updateDashboard();
+            }
+        }
+
+        // CALENDAR
+        function renderCalendar() {
+            const header = document.getElementById('calendarHeader');
+            header.textContent = new Date(currentYear, currentMonth).toLocaleString('id-ID', {month:'long', year:'numeric'});
+            const container = document.getElementById('calendar');
+            container.innerHTML = `<div class="col-span-7 grid grid-cols-7 text-xs font-medium text-slate-400 mb-2"><div>Min</div><div>Sen</div><div>Sel</div><div>Rab</div><div>Kam</div><div>Jum</div><div>Sab</div></div>`;
+            const firstDay = new Date(currentYear, currentMonth, 1).getDay();
+            const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
+            for (let i = 0; i < firstDay; i++) container.innerHTML += `<div></div>`;
+            for (let day = 1; day <= daysInMonth; day++) {
+                const dateStr = `${currentYear}-${String(currentMonth+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+                const has = events.some(e => e.date === dateStr);
+                container.innerHTML += `<div onclick="selectDate('${dateStr}')" class="glass p-3 rounded-xl cursor-pointer hover:bg-slate-700 ${has ? 'has-event' : ''}">${day}</div>`;
+            }
+        }
+
+        function prevMonth() { currentMonth--; if (currentMonth < 0) { currentMonth = 11; currentYear--; } renderCalendar(); }
+        function nextMonth() { currentMonth++; if (currentMonth > 11) { currentMonth = 0; currentYear++; } renderCalendar(); }
+        function goToToday() { const now = new Date(); currentMonth = now.getMonth(); currentYear = now.getFullYear(); renderCalendar(); }
+
+        function selectDate(date) {
+            editingEventIndex = -1;
+            document.getElementById('eventModalTitle').textContent = "Tambah Event";
+            document.getElementById('eventDateInput').value = date;
+            document.getElementById('eventTitleInput').value = '';
+            document.getElementById('eventDescInput').value = '';
+            document.getElementById('eventModal').classList.remove('hidden');
+        }
+
+        function saveEvent() {
+            const title = document.getElementById('eventTitleInput').value.trim();
+            if (!title) return alert("Judul event wajib!");
+            const ev = { date: document.getElementById('eventDateInput').value, title, desc: document.getElementById('eventDescInput').value };
+            if (editingEventIndex >= 0) events[editingEventIndex] = ev;
+            else events.push(ev);
+            saveData();
+            hideEventModal();
+            renderCalendar();
+            renderEventList();
+        }
+
+        function renderEventList() {
+            const container = document.getElementById('eventList');
+            container.innerHTML = events.length ? '' : '<p class="text-slate-400">Belum ada event</p>';
+            events.forEach((ev, i) => {
+                container.innerHTML += `
+                    <div class="glass p-5 rounded-2xl flex justify-between">
+                        <div><h4 class="font-semibold">${ev.title}</h4><p class="text-sm text-slate-400">${ev.date}</p></div>
+                        <div class="flex gap-2">
+                            <button onclick="editEvent(${i})" class="px-4 py-2 text-blue-400">Edit</button>
+                            <button onclick="deleteEvent(${i})" class="px-4 py-2 text-red-400">Hapus</button>
+                        </div>
+                    </div>`;
+            });
+        }
+
+        function editEvent(i) {
+            editingEventIndex = i;
+            const ev = events[i];
+            document.getElementById('eventModalTitle').textContent = "Edit Event";
+            document.getElementById('eventDateInput').value = ev.date;
+            document.getElementById('eventTitleInput').value = ev.title;
+            document.getElementById('eventDescInput').value = ev.desc || '';
+            document.getElementById('eventModal').classList.remove('hidden');
+        }
+        function deleteEvent(i) {
+            if (confirm("Hapus event?")) {
+                events.splice(i, 1);
+                saveData();
+                renderCalendar();
+                renderEventList();
+            }
+        }
+        function hideEventModal() { document.getElementById('eventModal').classList.add('hidden'); }
+
+function initApp() {
+// Load tema yang tersimpan
+  const savedTheme = localStorage.getItem('theme');
+  if (savedTheme === 'light') {
+    document.documentElement.classList.remove('dark');
+    document.getElementById('themeText').textContent = 'Dark Mode';
+    document.getElementById('themeIcon').classList.add('fa-sun');
+    document.getElementById('themeIcon').classList.remove('fa-moon');
+  }
+  
     document.getElementById('currentUser').textContent = `Halo, ${currentUser}`;
-
-    await loadAllData();
 
     showTab(0);
     renderJobs();
@@ -579,30 +865,225 @@ async function initApp() {
     renderEventList();
     updateDashboard();
     updateClock();
+
     setInterval(updateClock, 1000);
+
+    // SEARCH FIX (WAJIB DI LUAR SETINTERVAL)
+    document.getElementById('searchInput').addEventListener('input', function (e) {
+        const keyword = e.target.value.toLowerCase().trim();
+        handleSearch(keyword);
+    });
+}
+document.getElementById('jobSearch').addEventListener('input', function(e) {
+    const keyword = e.target.value.toLowerCase();
+
+    const filtered = jobs.filter(job =>
+        job.title.toLowerCase().includes(keyword) ||
+        (job.dueDate && job.dueDate.includes(keyword))
+    );
+
+    renderJobsFiltered(filtered);
+});
+document.getElementById('noteSearch').addEventListener('input', function(e) {
+    const keyword = e.target.value.toLowerCase();
+
+    const filtered = notes.filter(note =>
+        note.title.toLowerCase().includes(keyword) ||
+        note.content.toLowerCase().includes(keyword)
+    );
+
+    renderNotesFiltered(filtered);
+});
+
+function renderNotesFiltered(list) {
+    const container = document.getElementById('notesList');
+    container.innerHTML = '';
+
+    if (list.length === 0) {
+        container.innerHTML = '<p class="col-span-2 text-center py-12 text-slate-400">Tidak ada catatan</p>';
+        return;
+    }
+
+    list.forEach(note => {
+        const realIndex = notes.indexOf(note);
+
+        container.innerHTML += `
+            <div class="glass card p-6 rounded-3xl">
+                <div class="flex justify-between">
+                    <h4 class="font-semibold">${note.title}</h4>
+                    <span class="text-xs text-slate-400">${note.date}</span>
+                </div>
+                <p class="mt-3">${note.content}</p>
+                <div class="mt-5 flex gap-3">
+                    <button onclick="editNote(${realIndex})"
+                        class="flex-1 py-3 border border-slate-600 rounded-2xl">
+                        Edit
+                    </button>
+                    <button onclick="deleteNote(${realIndex})"
+                        class="flex-1 py-3 bg-red-500/20 text-red-400 rounded-2xl">
+                        Hapus
+                    </button>
+                </div>
+            </div>
+        `;
+    });
+}
+document.getElementById('eventSearch').addEventListener('input', function(e) {
+    const keyword = e.target.value.toLowerCase().trim();
+
+    const filtered = events.filter(ev =>
+        ev.title.toLowerCase().includes(keyword) ||
+        ev.date.includes(keyword) ||
+        (ev.desc && ev.desc.toLowerCase().includes(keyword))
+    );
+
+    renderEventSearch(filtered);
+});
+
+function renderEventSearch(list) {
+    const container = document.getElementById('eventList');
+    container.innerHTML = '';
+
+    if (list.length === 0) {
+        container.innerHTML = '<p class="text-slate-400">Tidak ada event</p>';
+        return;
+    }
+
+    list.forEach((ev, i) => {
+        container.innerHTML += `
+            <div class="glass p-5 rounded-2xl flex justify-between">
+                <div>
+                    <h4 class="font-semibold">${ev.title}</h4>
+                    <p class="text-sm text-slate-400">${ev.date}</p>
+                </div>
+            </div>
+        `;
+    });
+}
+        window.onload = () => {
+            if (!pinCode) document.getElementById('pinScreen').style.display = 'flex';
+            else showPinScreen();
+        };
+		function handleSearch(keyword) {
+    const dropdown = document.getElementById('searchDropdown');
+
+    if (!keyword) {
+        dropdown.classList.add('hidden');
+        dropdown.innerHTML = '';
+        return;
+    }
+
+    let results = [];
+
+    // JOB
+    jobs.forEach((job, i) => {
+        if (
+            job.title.toLowerCase().includes(keyword) ||
+            (job.dueDate && job.dueDate.includes(keyword))
+        ) {
+            results.push({
+                type: 'job',
+                title: job.title,
+                sub: job.dueDate || '',
+                index: i
+            });
+        }
+    });
+
+    // NOTES
+    notes.forEach((note, i) => {
+        if (
+            note.title.toLowerCase().includes(keyword) ||
+            note.content.toLowerCase().includes(keyword)
+        ) {
+            results.push({
+                type: 'note',
+                title: note.title,
+                sub: 'Note',
+                index: i
+            });
+        }
+    });
+
+    // EVENTS (CALENDAR)
+    events.forEach((ev, i) => {
+        if (
+            ev.title.toLowerCase().includes(keyword) ||
+            ev.date.includes(keyword) ||
+            (ev.desc && ev.desc.toLowerCase().includes(keyword))
+        ) {
+            results.push({
+                type: 'event',
+                title: ev.title,
+                sub: ev.date,
+                index: i
+            });
+        }
+    });
+
+    renderSearchDropdown(results);
+}
+function renderSearchDropdown(results) {
+    const dropdown = document.getElementById('searchDropdown');
+
+    if (results.length === 0) {
+        dropdown.innerHTML = `<div class="p-4 text-slate-400">Tidak ada hasil</div>`;
+        dropdown.classList.remove('hidden');
+        return;
+    }
+
+    dropdown.innerHTML = '';
+
+    results.forEach(item => {
+
+        let color =
+            item.type === 'job' ? 'text-blue-400' :
+            item.type === 'note' ? 'text-emerald-400' :
+            'text-purple-400';
+
+        dropdown.innerHTML += `
+            <div onclick="openSearchResult('${item.type}', ${item.index})"
+                class="p-4 hover:bg-slate-800 cursor-pointer border-b border-slate-800">
+
+                <div class="font-semibold ${color}">
+                    ${item.title}
+                </div>
+
+                <div class="text-xs text-slate-400">
+                    ${item.type.toUpperCase()} • ${item.sub}
+                </div>
+            </div>
+        `;
+    });
+
+    dropdown.classList.remove('hidden');
+}
+function openSearchResult(type, index) {
+    document.getElementById('searchDropdown').classList.add('hidden');
+    document.getElementById('searchInput').value = '';
+
+    if (type === 'job') {
+        showTab(1);
+        setTimeout(() => editJob(index), 200);
+    }
+
+    if (type === 'note') {
+        showTab(2);
+        setTimeout(() => editNote(index), 200);
+    }
+
+    if (type === 'event') {
+        showTab(3);
+
+        const date = new Date(events[index].date);
+        currentMonth = date.getMonth();
+        currentYear = date.getFullYear();
+
+        renderCalendar();
+        renderEventList();
+    }
 }
 
-// ================== PIN, THEME, TAB, CLOCK, dll (tetap sama) ==================
-function showPinScreen() { /* ... tetap sama */ }
-function hidePinScreen() { /* ... tetap sama */ }
-function appendPin(digit) { /* ... tetap sama */ }
-function clearPin() { /* ... tetap sama */ }
-function verifyPin() { /* ... tetap sama */ }
-function changePin() { /* ... tetap sama */ }
-function updateClock() { /* ... tetap sama */ }
-function toggleTheme() { /* ... tetap sama */ }
-function showTab(n) { /* ... tetap sama */ }
-function logout() { /* ... tetap sama */ }
-
-// Dashboard, Render, Search functions tetap kamu bisa pakai yang lama (kecuali yang sudah diubah di atas)
-
-window.onload = () => {
-    if (!pinCode) {
-        document.getElementById('pinScreen').style.display = 'flex';
-    } else {
-        showPinScreen();
-    }
-};
-</script>
+    </script>
 </body>
 </html>
