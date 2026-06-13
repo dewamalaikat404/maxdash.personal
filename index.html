@@ -1,0 +1,608 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Personal Dashboard</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+	<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        body { font-family: 'Inter', sans-serif; }
+        .glass { background: rgba(15, 23, 42, 0.85); backdrop-filter: blur(12px); }
+        .card { transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+        .card:hover { transform: translateY(-6px); }
+        .tab-link.active { background-color: rgb(30 41 59); color: white; border-radius: 9999px; }
+        .overdue { animation: pulse 2s infinite; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
+        .has-event { background-color: #3b82f6; color: white; font-weight: 600; }
+
+        #pinScreen { position: fixed; inset: 0; background: linear-gradient(to bottom right, #0f172a, #1e2937); z-index: 1000; display: none; align-items: center; justify-content: center; }
+        .pin-input { font-size: 2.2rem; letter-spacing: 12px; width: 300px; text-align: center; }
+/* ================== LIGHT MODE - PERBAIKAN LENGKAP ================== */
+.light body {
+  background: linear-gradient(to bottom right, #f1f5f9, #e0e7ff) !important;
+  color: #1e2937 !important;
+}
+
+.light .glass {
+  background: rgba(248, 250, 252, 0.95) !important;
+  color: #1e2937 !important;
+  border: 1px solid #cbd5e1 !important;
+}
+
+.light .bg-slate-900,
+.light .bg-slate-800,
+.light .bg-slate-700 {
+  background-color: #f8fafc !important;
+  color: #1e2937 !important;
+}
+
+.light .border-slate-700,
+.light .border-slate-600 {
+  border-color: #94a3b8 !important;
+}
+
+/* Teks utama supaya jelas */
+.light .text-slate-200,
+.light .text-slate-400,
+.light .text-slate-300,
+.light h1, .light h2, .light h3, .light h4, 
+.light p, .light div, .light span {
+  color: #1e2937 !important;
+}
+
+.light .font-semibold,
+.light .font-bold {
+  color: #0f172a !important;
+}
+
+/* Calendar - Tanggal yang ditandai */
+.light .has-event {
+  background-color: #3b82f6 !important;
+  color: white !important;
+  font-weight: 600 !important;
+}
+
+/* Hover Effect di Sidebar Menu */
+.light .tab-link {
+  color: #475569 !important;
+}
+.light .tab-link:hover {
+  background-color: #e2e8f0 !important;
+  color: #1e2937 !important;
+}
+.light .tab-link.active {
+  background-color: #3b82f6 !important;
+  color: white !important;
+}
+
+/* Hover Effect di Settings & Tombol */
+.light button:hover,
+.light .hover\:bg-slate-800:hover {
+  background-color: #e2e8f0 !important;
+  color: #1e2937 !important;
+}
+
+/* Input Fields */
+.light input, .light textarea, .light select {
+  background-color: #f8fafc !important;
+  color: #1e2937 !important;
+  border-color: #94a3b8 !important;
+}
+
+/* Card khusus (Reminder, Upcoming, Done, dll) */
+.light .bg-blue-500\/10,
+.light .bg-purple-500\/10,
+.light .bg-emerald-500\/10,
+.light .bg-red-500\/20,
+.light .bg-amber-500\/20 {
+  background-color: #dbeafe !important;
+  color: #1e40af !important;
+  border: 1px solid #bfdbfe !important;
+}
+/* ================== FIX LOGO DASHBOARD ================== */
+h1.text-3xl.font-bold {
+    color: inherit !important; /* biarkan warna default mengalir */
+}
+
+h1.text-3xl.font-bold span.text-blue-500 {
+    color: rgb(59 130 246) !important; /* pastikan biru tetap kuat */
+}
+
+/* Dark Mode */
+body:not(.light) h1.text-3xl.font-bold {
+    color: #e2e8f0 !important; /* light gray yang bagus */
+}
+
+/* Light Mode */
+.light h1.text-3xl.font-bold {
+    color: #0f172a !important; /* dark slate yang tajam */
+}
+
+.light h1.text-3xl.font-bold span.text-blue-500 {
+    color: #2563eb !important; /* biru yang lebih jelas di light */
+}
+    </style>
+</head>
+<body class="bg-gradient-to-br from-slate-950 to-zinc-950 text-slate-200 min-h-screen ">
+
+    <!-- PIN SCREEN -->
+    <div id="pinScreen" class="flex-col items-center justify-center gap-8">
+        <div class="text-center">
+            <h1 class="text-5xl font-bold tracking-tighter mb-2">DAS<span class="text-blue-500">HBOARD</span></h1>
+            <p class="text-slate-400">Masukkan PIN untuk masuk</p>
+        </div>
+        <div class="glass p-10 rounded-3xl">
+            <input id="pinInput" type="password" maxlength="6" 
+                   class="pin-input bg-transparent border border-slate-600 focus:border-blue-500 rounded-2xl py-6 outline-none" 
+                   placeholder="••••••" autocomplete="off" onkeypress="if(event.key==='Enter') verifyPin()">
+            <div class="mt-8 grid grid-cols-3 gap-3 text-xl">
+                <button onclick="appendPin('1')" class="py-5 bg-slate-800 hover:bg-slate-700 rounded-2xl">1</button>
+                <button onclick="appendPin('2')" class="py-5 bg-slate-800 hover:bg-slate-700 rounded-2xl">2</button>
+                <button onclick="appendPin('3')" class="py-5 bg-slate-800 hover:bg-slate-700 rounded-2xl">3</button>
+                <button onclick="appendPin('4')" class="py-5 bg-slate-800 hover:bg-slate-700 rounded-2xl">4</button>
+                <button onclick="appendPin('5')" class="py-5 bg-slate-800 hover:bg-slate-700 rounded-2xl">5</button>
+                <button onclick="appendPin('6')" class="py-5 bg-slate-800 hover:bg-slate-700 rounded-2xl">6</button>
+                <button onclick="appendPin('7')" class="py-5 bg-slate-800 hover:bg-slate-700 rounded-2xl">7</button>
+                <button onclick="appendPin('8')" class="py-5 bg-slate-800 hover:bg-slate-700 rounded-2xl">8</button>
+                <button onclick="appendPin('9')" class="py-5 bg-slate-800 hover:bg-slate-700 rounded-2xl">9</button>
+                <button onclick="clearPin()" class="py-5 bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded-2xl">C</button>
+                <button onclick="appendPin('0')" class="py-5 bg-slate-800 hover:bg-slate-700 rounded-2xl">0</button>
+                <button onclick="verifyPin()" class="py-5 bg-emerald-600 hover:bg-emerald-500 rounded-2xl font-semibold">OK</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MAIN APP -->
+    <div class="flex h-screen overflow-hidden hidden" id="mainApp">
+        <!-- Sidebar -->
+        <div class="w-72 bg-slate-900 border-r border-slate-700 flex flex-col">
+            <div class="p-6 border-b border-slate-700">
+                <h1 class="text-3xl font-bold tracking-tight">DAS<span class="text-blue-500">HBOARD</span></h1>
+                <p class="text-slate-400 text-sm">Personal Dashboard</p>
+                <div class="mt-4 text-sm text-blue-400" id="currentUser">Halo, User</div>
+            </div>
+            <nav class="flex-1 p-4 space-y-1">
+                <a onclick="showTab(0)" class="tab-link flex items-center gap-3 px-4 py-3 rounded-2xl hover:bg-slate-800 active"><i class="fa fa-home w-5"></i> Dashboard</a>
+                <a onclick="showTab(1)" class="tab-link flex items-center gap-3 px-4 py-3 rounded-2xl hover:bg-slate-800"><i class="fa fa-tasks w-5"></i> Job Manager</a>
+                <a onclick="showTab(2)" class="tab-link flex items-center gap-3 px-4 py-3 rounded-2xl hover:bg-slate-800"><i class="fa fa-note-sticky w-5"></i> Notes</a>
+                <a onclick="showTab(3)" class="tab-link flex items-center gap-3 px-4 py-3 rounded-2xl hover:bg-slate-800"><i class="fa fa-calendar w-5"></i> Calendar</a>
+                <a onclick="showTab(4)" class="tab-link flex items-center gap-3 px-4 py-3 rounded-2xl hover:bg-slate-800"><i class="fa fa-cog w-5"></i> Settings</a>
+            </nav>
+            <div class="p-4 border-t border-slate-700 space-y-2">
+                <button onclick="toggleTheme()" class="w-full py-3 bg-slate-800 hover:bg-slate-700 rounded-2xl flex items-center justify-center gap-2">
+                    <i class="fa fa-moon" id="themeIcon"></i> <span id="themeText">Light Mode</span>
+                </button>
+                <button onclick="logout()" class="w-full py-3 bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded-2xl">Logout</button>
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <div class="flex-1 flex flex-col overflow-auto">
+           <header class="bg-slate-900 border-b border-slate-700 px-8 py-5 flex items-center justify-between sticky top-0 z-10 relative">
+    
+    <!-- LEFT: SEARCH -->
+    <div class="relative">
+        <input id="searchInput" type="text" 
+            placeholder="Cari job atau catatan..."
+            class="bg-slate-800 border border-slate-600 rounded-2xl px-5 py-3 w-96 focus:outline-none focus:border-blue-500">
+
+        <!-- SEARCH DROPDOWN -->
+        <div id="searchDropdown"
+            class="absolute left-0 top-full mt-2 w-96 bg-slate-900 border border-slate-700 rounded-2xl shadow-xl hidden max-h-96 overflow-auto z-50">
+        </div>
+    </div>
+
+    <!-- RIGHT: CLOCK -->
+    <div class="flex items-center gap-6">
+        <div class="text-right">
+            <div id="liveClock" class="text-2xl font-semibold tabular-nums"></div>
+            <div id="liveDate" class="text-sm text-slate-400"></div>
+        </div>
+
+        <div onclick="showTab(4)" 
+            class="w-10 h-10 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-2xl flex items-center justify-center text-xl font-bold cursor-pointer">
+            👤
+        </div>
+    </div>
+
+</header>
+
+            <div class="p-8" id="tabContent">
+                <!-- DASHBOARD -->
+                <div id="tab0" class="tab-pane">
+                    <h2 class="text-3xl font-bold mb-2">Dashboard</h2>
+                    <p id="greeting" class="text-slate-400 mb-8"></p>
+                    <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-10">
+                        <div class="glass card p-6 rounded-3xl">Total Job<br><span id="totalJob" class="text-5xl font-bold">0</span></div>
+                        <div class="glass card p-6 rounded-3xl border border-amber-400/30">Pending<br><span id="pendingJob" class="text-5xl font-bold text-amber-400">0</span></div>
+                        <div class="glass card p-6 rounded-3xl border border-emerald-400/30">Done Hari Ini<br><span id="doneToday" class="text-5xl font-bold text-emerald-400">0</span></div>
+                        <div class="glass card p-6 rounded-3xl border border-purple-400/30">Notes<br><span id="totalNotes" class="text-5xl font-bold text-purple-400">0</span></div>
+                    </div>
+
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        <div class="glass card p-6 rounded-3xl">
+                            <h3 class="font-semibold mb-4">Analisis Job</h3>
+                            <canvas id="jobChart" height="180"></canvas>
+                        </div>
+                        <div class="glass card p-6 rounded-3xl">
+                            <h3 class="font-semibold mb-4">Kerjaan Sudah Done</h3>
+                            <div id="doneList" class="space-y-3 max-h-80 overflow-auto"></div>
+                        </div>
+                    </div>
+
+                    <div class="mt-6 grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        <div class="glass card p-6 rounded-3xl">
+                            <h3 class="font-semibold mb-4">Reminder Hari Ini</h3>
+                            <div id="reminderList" class="space-y-3"></div>
+                        </div>
+                        <div class="glass card p-6 rounded-3xl">
+                            <h3 class="font-semibold mb-4">Upcoming Terdekat</h3>
+                            <div id="upcomingList" class="space-y-3"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- JOB MANAGER -->
+                <div id="tab1" class="tab-pane hidden">
+				    <input id="jobSearch" type="text"
+class="w-full mb-4 bg-slate-800 border border-slate-600 rounded-2xl px-5 py-3"
+placeholder="Cari job...">
+                    <div class="flex justify-between mb-6">
+                        <h2 class="text-3xl font-bold">Job Manager</h2>
+                        <button onclick="showAddJobModal()" class="bg-blue-600 hover:bg-blue-500 px-6 py-3 rounded-2xl flex items-center gap-2"><i class="fa fa-plus"></i> Tambah Job</button>
+                    </div>
+                    <div class="flex gap-2 mb-6">
+                        <button onclick="filterJobs('all')" class="filter-btn active px-5 py-2 rounded-xl text-sm bg-slate-700">Semua</button>
+                        <button onclick="filterJobs('daily')" class="filter-btn px-5 py-2 rounded-xl text-sm">Harian</button>
+                        <button onclick="filterJobs('weekly')" class="filter-btn px-5 py-2 rounded-xl text-sm">Mingguan</button>
+                        <button onclick="filterJobs('monthly')" class="filter-btn px-5 py-2 rounded-xl text-sm">Bulanan</button>
+                    </div>
+                    <div id="jobList" class="space-y-4"></div>
+                </div>
+
+                <!-- NOTES -->
+                <div id="tab2" class="tab-pane hidden">
+				<input id="noteSearch" type="text"
+class="w-full mb-4 bg-slate-800 border border-slate-600 rounded-2xl px-5 py-3"
+placeholder="Cari catatan...">
+                    <div class="flex justify-between mb-6">
+                        <h2 class="text-3xl font-bold">Catatan Pribadi</h2>
+                        <button onclick="showAddNoteModal()" class="bg-emerald-600 hover:bg-emerald-500 px-6 py-3 rounded-2xl flex items-center gap-2"><i class="fa fa-plus"></i> Tambah Catatan</button>
+                    </div>
+                    <div id="notesList" class="grid grid-cols-1 md:grid-cols-2 gap-4"></div>
+                </div>
+
+                <!-- CALENDAR -->
+                <div id="tab3" class="tab-pane hidden">
+				<input id="eventSearch" type="text"
+class="w-full mb-4 bg-slate-800 border border-slate-600 rounded-2xl px-5 py-3"
+placeholder="Cari event...">
+                    <div class="flex justify-between items-center mb-6">
+                        <h2 class="text-3xl font-bold">Calendar</h2>
+                        <div class="flex items-center gap-4">
+                            <button onclick="prevMonth()" class="p-3 hover:bg-slate-800 rounded-2xl"><i class="fa fa-chevron-left"></i></button>
+                            <div id="calendarHeader" class="text-xl font-semibold min-w-[220px] text-center"></div>
+                            <button onclick="nextMonth()" class="p-3 hover:bg-slate-800 rounded-2xl"><i class="fa fa-chevron-right"></i></button>
+                            <button onclick="goToToday()" class="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-2xl text-sm">Hari Ini</button>
+                        </div>
+                    </div>
+                    <div class="glass card p-6 rounded-3xl">
+                        <div id="calendar" class="grid grid-cols-7 gap-1 text-center"></div>
+                    </div>
+                    <div class="mt-8">
+                        <h3 class="font-semibold mb-4">Event Bulan Ini</h3>
+                        <div id="eventList" class="space-y-4"></div>
+                    </div>
+                </div>
+
+                <!-- SETTINGS -->
+<div id="tab4" class="tab-pane hidden">
+  <h2 class="text-3xl font-bold mb-6">Settings</h2>
+  <div class="glass card p-8 rounded-3xl max-w-lg">
+    <h3 class="font-semibold mb-4">Akun Pengguna</h3>
+    <input id="usernameInput" class="w-full bg-slate-800 border border-slate-600 rounded-2xl px-5 py-4 mb-4" placeholder="Username">
+    <button onclick="saveUserSettings()" class="w-full bg-blue-600 py-4 rounded-2xl mb-8">Simpan Akun</button>
+
+    <h3 class="font-semibold mb-4 mt-8">Keamanan</h3>
+    <button onclick="changePin()" 
+            class="w-full bg-slate-700 hover:bg-slate-600 py-4 rounded-2xl mb-3 flex items-center justify-center gap-2">
+      <i class="fa fa-lock"></i> Atur PIN Baru
+    </button>
+
+    <button onclick="exportData()" class="w-full bg-slate-700 hover:bg-slate-600 py-4 rounded-2xl mb-3">Export Backup</button>
+    <button onclick="importData()" class="w-full bg-slate-700 hover:bg-slate-600 py-4 rounded-2xl mb-3">Import Data</button>
+    <button onclick="clearAllData()" class="w-full bg-red-500/20 hover:bg-red-500/30 text-red-400 py-4 rounded-2xl">Hapus Semua Data</button>
+  </div>
+</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODALS -->
+    <!-- Job Modal -->
+    <div id="jobModal" class="hidden fixed inset-0 bg-black/70 flex items-center justify-center z-50">
+        <div class="glass p-8 rounded-3xl w-full max-w-md">
+            <h3 class="text-2xl font-bold mb-6">Tambah / Edit Job</h3>
+            <input id="jobTitleInput" class="w-full bg-slate-800 border border-slate-600 rounded-2xl px-5 py-4 mb-4" placeholder="Nama Job">
+            <div class="grid grid-cols-2 gap-4 mb-4">
+                <div><label class="text-xs text-slate-400">Tanggal</label><input id="jobDateInput" type="date" class="w-full bg-slate-800 border border-slate-600 rounded-2xl px-5 py-4"></div>
+                <div><label class="text-xs text-slate-400">Jam</label><input id="jobTimeInput" type="time" class="w-full bg-slate-800 border border-slate-600 rounded-2xl px-5 py-4"></div>
+            </div>
+            <select id="jobRecurrenceInput" class="w-full bg-slate-800 border border-slate-600 rounded-2xl px-5 py-4 mb-6">
+                <option value="none">Sekali Saja</option>
+                <option value="daily">Harian</option>
+                <option value="weekly">Mingguan</option>
+                <option value="monthly">Bulanan</option>
+            </select>
+            <div class="flex gap-3">
+                <button onclick="hideJobModal()" class="flex-1 py-4 border border-slate-600 rounded-2xl">Batal</button>
+                <button onclick="addOrUpdateJob()" class="flex-1 py-4 bg-blue-600 rounded-2xl">Simpan</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Note Modal -->
+    <div id="noteModal" class="hidden fixed inset-0 bg-black/70 flex items-center justify-center z-50">
+        <div class="glass p-8 rounded-3xl w-full max-w-2xl">
+            <h3 class="text-2xl font-bold mb-6" id="noteModalTitle">Catatan Baru</h3>
+            <input id="noteTitleInput" class="w-full bg-slate-800 border border-slate-600 rounded-2xl px-5 py-4 mb-4" placeholder="Judul">
+            <textarea id="noteContentInput" class="w-full h-80 bg-slate-800 border border-slate-600 rounded-3xl p-6" placeholder="Isi catatan..."></textarea>
+            <div class="flex gap-3 mt-6">
+                <button onclick="hideNoteModal()" class="flex-1 py-4 border border-slate-600 rounded-2xl">Batal</button>
+                <button onclick="saveNote()" class="flex-1 py-4 bg-emerald-600 rounded-2xl">Simpan</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Event Modal -->
+    <div id="eventModal" class="hidden fixed inset-0 bg-black/70 flex items-center justify-center z-50">
+        <div class="glass p-8 rounded-3xl w-full max-w-md">
+            <h3 class="text-2xl font-bold mb-6" id="eventModalTitle">Tambah Event</h3>
+            <input id="eventDateInput" type="date" class="w-full bg-slate-800 border border-slate-600 rounded-2xl px-5 py-4 mb-4">
+            <input id="eventTitleInput" class="w-full bg-slate-800 border border-slate-600 rounded-2xl px-5 py-4 mb-4" placeholder="Judul Event">
+            <textarea id="eventDescInput" class="w-full h-32 bg-slate-800 border border-slate-600 rounded-3xl p-5" placeholder="Keterangan"></textarea>
+            <div class="flex gap-3 mt-6">
+                <button onclick="hideEventModal()" class="flex-1 py-4 border border-slate-600 rounded-2xl">Batal</button>
+                <button onclick="saveEvent()" class="flex-1 py-4 bg-indigo-600 rounded-2xl">Simpan</button>
+            </div>
+        </div>
+    </div>
+
+<script>
+// ================== SUPABASE CONFIG ==================
+const SUPABASE_URL = 'https://pykewmzwdhbjctlfgmnm.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB5a2V3bXp3ZGhiamN0bGZnbW5tIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEzMTU3MzAsImV4cCI6MjA5Njg5MTczMH0.-aArphcJFVSWxaDq5Z9l2Eq8_n0Md5U4jRZ0r2Vrhnw';
+
+const supabase = Supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+// ================== VARIABEL GLOBAL ==================
+let jobs = [];
+let notes = [];
+let events = [];
+let currentUser = localStorage.getItem('username') || "User";
+let pinCode = localStorage.getItem('appPin');
+let currentFilter = 'all';
+let editingJobIndex = -1;
+let editingNoteIndex = -1;
+let editingEventIndex = -1;
+let currentMonth = new Date().getMonth();
+let currentYear = new Date().getFullYear();
+let jobChartInstance = null;
+
+// ================== LOAD DATA DARI DATABASE ==================
+async function loadAllData() {
+    try {
+        const [jobsRes, notesRes, eventsRes] = await Promise.all([
+            supabase.from('jobs').select('*').order('due_date', { ascending: true }),
+            supabase.from('notes').select('*').order('created_at', { ascending: false }),
+            supabase.from('events').select('*').order('date', { ascending: true })
+        ]);
+
+        jobs = jobsRes.data || [];
+        notes = notesRes.data || [];
+        events = eventsRes.data || [];
+    } catch (e) {
+        console.error("Gagal load data:", e);
+        alert("❌ Gagal menghubungkan ke database. Cek koneksi internet!");
+    }
+}
+
+// ================== HELPER ==================
+function isTodayCompleted(job) {
+    if (!job.completed_dates) return false;
+    const today = new Date().toISOString().split('T')[0];
+    const completed = JSON.parse(job.completed_dates || '[]');
+    return completed.includes(today);
+}
+
+// ================== JOBS ==================
+async function addOrUpdateJob() {
+    const title = document.getElementById('jobTitleInput').value.trim();
+    if (!title) return alert("Nama job wajib diisi!");
+
+    const jobData = {
+        title,
+        due_date: document.getElementById('jobDateInput').value || null,
+        due_time: document.getElementById('jobTimeInput').value || null,
+        recurrence: document.getElementById('jobRecurrenceInput').value,
+        completed_dates: editingJobIndex >= 0 ? jobs[editingJobIndex].completed_dates : '[]'
+    };
+
+    try {
+        if (editingJobIndex >= 0) {
+            await supabase.from('jobs').update(jobData).eq('id', jobs[editingJobIndex].id);
+        } else {
+            await supabase.from('jobs').insert(jobData);
+        }
+        hideJobModal();
+        await loadAllData();
+        renderJobs();
+        updateDashboard();
+    } catch (e) {
+        alert("Gagal menyimpan job: " + e.message);
+    }
+}
+
+async function markJobDone(idx) {
+    const job = jobs[idx];
+    if (!job) return;
+
+    let completed = JSON.parse(job.completed_dates || '[]');
+    const today = new Date().toISOString().split('T')[0];
+    if (!completed.includes(today)) completed.push(today);
+
+    try {
+        await supabase.from('jobs').update({ completed_dates: JSON.stringify(completed) }).eq('id', job.id);
+        await loadAllData();
+        renderJobs();
+        updateDashboard();
+    } catch (e) {
+        alert("Gagal update status job");
+    }
+}
+
+async function deleteJob(idx) {
+    if (!confirm("Hapus job ini?")) return;
+    try {
+        await supabase.from('jobs').delete().eq('id', jobs[idx].id);
+        await loadAllData();
+        renderJobs();
+        updateDashboard();
+    } catch (e) {
+        alert("Gagal menghapus job");
+    }
+}
+
+async function editJob(idx) {
+    editingJobIndex = idx;
+    const job = jobs[idx];
+    document.getElementById('jobTitleInput').value = job.title;
+    document.getElementById('jobDateInput').value = job.due_date || '';
+    document.getElementById('jobTimeInput').value = job.due_time || '';
+    document.getElementById('jobRecurrenceInput').value = job.recurrence || 'none';
+    document.getElementById('jobModal').classList.remove('hidden');
+}
+
+// ================== NOTES ==================
+async function saveNote() {
+    const title = document.getElementById('noteTitleInput').value.trim() || "Catatan Baru";
+    const content = document.getElementById('noteContentInput').value.trim();
+    if (!content) return alert("Isi catatan tidak boleh kosong");
+
+    try {
+        if (editingNoteIndex >= 0) {
+            await supabase.from('notes').update({ title, content }).eq('id', notes[editingNoteIndex].id);
+        } else {
+            await supabase.from('notes').insert({ title, content, date: new Date().toLocaleDateString('id-ID') });
+        }
+        hideNoteModal();
+        await loadAllData();
+        renderNotes();
+        updateDashboard();
+    } catch (e) {
+        alert("Gagal menyimpan catatan");
+    }
+}
+
+async function deleteNote(i) {
+    if (!confirm("Hapus catatan?")) return;
+    try {
+        await supabase.from('notes').delete().eq('id', notes[i].id);
+        await loadAllData();
+        renderNotes();
+        updateDashboard();
+    } catch (e) {
+        alert("Gagal hapus catatan");
+    }
+}
+
+// ================== EVENTS ==================
+async function saveEvent() {
+    const title = document.getElementById('eventTitleInput').value.trim();
+    if (!title) return alert("Judul event wajib!");
+
+    try {
+        const ev = {
+            date: document.getElementById('eventDateInput').value,
+            title,
+            description: document.getElementById('eventDescInput').value
+        };
+
+        if (editingEventIndex >= 0) {
+            await supabase.from('events').update(ev).eq('id', events[editingEventIndex].id);
+        } else {
+            await supabase.from('events').insert(ev);
+        }
+        hideEventModal();
+        await loadAllData();
+        renderCalendar();
+        renderEventList();
+    } catch (e) {
+        alert("Gagal menyimpan event");
+    }
+}
+
+async function deleteEvent(i) {
+    if (!confirm("Hapus event?")) return;
+    try {
+        await supabase.from('events').delete().eq('id', events[i].id);
+        await loadAllData();
+        renderCalendar();
+        renderEventList();
+    } catch (e) {
+        alert("Gagal hapus event");
+    }
+}
+
+// ================== INIT APP ==================
+async function initApp() {
+    const savedTheme = localStorage.getItem('theme');
+    if (savedTheme === 'light') {
+        document.documentElement.classList.add('light');
+        document.getElementById('themeText').textContent = 'Dark Mode';
+        document.getElementById('themeIcon').classList.add('fa-sun');
+        document.getElementById('themeIcon').classList.remove('fa-moon');
+    }
+
+    document.getElementById('currentUser').textContent = `Halo, ${currentUser}`;
+
+    await loadAllData();
+
+    showTab(0);
+    renderJobs();
+    renderNotes();
+    renderCalendar();
+    renderEventList();
+    updateDashboard();
+    updateClock();
+    setInterval(updateClock, 1000);
+}
+
+// ================== PIN, THEME, TAB, CLOCK, dll (tetap sama) ==================
+function showPinScreen() { /* ... tetap sama */ }
+function hidePinScreen() { /* ... tetap sama */ }
+function appendPin(digit) { /* ... tetap sama */ }
+function clearPin() { /* ... tetap sama */ }
+function verifyPin() { /* ... tetap sama */ }
+function changePin() { /* ... tetap sama */ }
+function updateClock() { /* ... tetap sama */ }
+function toggleTheme() { /* ... tetap sama */ }
+function showTab(n) { /* ... tetap sama */ }
+function logout() { /* ... tetap sama */ }
+
+// Dashboard, Render, Search functions tetap kamu bisa pakai yang lama (kecuali yang sudah diubah di atas)
+
+window.onload = () => {
+    if (!pinCode) {
+        document.getElementById('pinScreen').style.display = 'flex';
+    } else {
+        showPinScreen();
+    }
+};
+</script>
+</body>
+</html>
