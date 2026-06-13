@@ -375,8 +375,7 @@ placeholder="Cari event...">
 
     <script>
 		// ================= SUPABASE INIT =================
-const SUPABASE_URL = "https://pykewmzwdhbjctlfgmnm.supabase.co";
-const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB5a2V3bXp3ZGhiamN0bGZnbW5tIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEzMTU3MzAsImV4cCI6MjA5Njg5MTczMH0.-aArphcJFVSWxaDq5Z9l2Eq8_n0Md5U4jRZ0r2Vrhnw";
+const sb = window.supabase.createClient(https://pykewmzwdhbjctlfgmnm.supabase.coL, eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB5a2V3bXp3ZGhiamN0bGZnbW5tIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEzMTU3MzAsImV4cCI6MjA5Njg5MTczMH0.-aArphcJFVSWxaDq5Z9l2Eq8_n0Md5U4jRZ0r2Vrhnw);
 
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 		
@@ -733,34 +732,29 @@ function renderJobsWith(list) {
             updateDashboard();
         }
 
-        function showAddJobModal() {
-            editingJobIndex = -1;
-            document.getElementById('jobTitleInput').value = '';
-            document.getElementById('jobDateInput').value = new Date().toISOString().split('T')[0];
-            document.getElementById('jobTimeInput').value = '';
-            document.getElementById('jobRecurrenceInput').value = 'none';
-            document.getElementById('jobModal').classList.remove('hidden');
-        }
-        function hideJobModal() { document.getElementById('jobModal').classList.add('hidden'); }
+        async function addOrUpdateJob() {
+    const title = document.getElementById('jobTitleInput').value.trim();
+    if (!title) return alert("Nama job wajib diisi!");
 
-        function addOrUpdateJob() {
-            const title = document.getElementById('jobTitleInput').value.trim();
-            if (!title) return alert("Nama job wajib diisi!");
-            const jobData = {
-                title, dueDate: document.getElementById('jobDateInput').value,
-                dueTime: document.getElementById('jobTimeInput').value,
-                recurrence: document.getElementById('jobRecurrenceInput').value,
-                completedDates: editingJobIndex >= 0 ? jobs[editingJobIndex].completedDates || [] : []
-            };
-           if (editingJobIndex >= 0) {
-    jobs[editingJobIndex] = { ...jobs[editingJobIndex], ...jobData };
-} else {
-    jobs.push(jobData);
+    const jobData = {
+        title,
+        dueDate: document.getElementById('jobDateInput').value,
+        dueTime: document.getElementById('jobTimeInput').value,
+        recurrence: document.getElementById('jobRecurrenceInput').value,
+        completedDates: editingJobIndex >= 0 ? jobs[editingJobIndex].completedDates || [] : []
+    };
+
+    if (editingJobIndex >= 0) {
+        jobs[editingJobIndex] = { ...jobs[editingJobIndex], ...jobData };
+    } else {
+        jobs.push(jobData);
+    }
+
+    await saveData();
+    renderJobs();
+    updateDashboard();
+    hideJobModal();
 }
-
-await saveData();
-renderJobs();
-updateDashboard();
 
         function editJob(idx) {
             editingJobIndex = idx;
